@@ -71,11 +71,11 @@ export function updateProjection() {
 export function showProjectedImage(viewerImg, camId) {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
-    const originalSrc = viewerImg.src;
+    const originalSrc = viewerImg.getAttribute('data-original-src') || viewerImg.src;
     const tempImg = new Image();
 
     // 获取控制开关状态
-    const isEnlargedView = viewerImg.id === 'viewerImage';
+    const isEnlargedView = viewerImg.id === 'viewerImage' || viewerImg.id === 'enlargedImage';
     const projectionToggle = isEnlargedView ? 
         document.getElementById('viewerProjectionToggle') : 
         document.getElementById('projectionToggle');
@@ -83,17 +83,48 @@ export function showProjectedImage(viewerImg, camId) {
         document.getElementById('viewerBoxToggle') : 
         document.getElementById('boxToggle');
 
+    // 获取必要的数据
+    const pointCloud = getPointCloud();
+    const calibData = getCalibData();
+
+    if (!pointCloud || !calibData || !calibData[camId]) {
+        console.error(`无法获取投影所需数据`, {
+            hasPointCloud: !!pointCloud,
+            hasCalibData: !!calibData,
+            camId: camId,
+            availableCamIds: calibData ? Object.keys(calibData) : []
+        });
+        viewerImg.src = originalSrc;
+        return;
+    }
+
+    // 确定适当的缩放因子
+    const scale = isEnlargedView ? 2.0 : 1.0;
+    console.log(`准备投影图像，相机ID: ${camId}, 缩放: ${scale}, 是放大视图: ${isEnlargedView}`);
+
+    // 先加载原始图像以获取尺寸
     tempImg.onload = () => {
-        canvas.width = tempImg.naturalWidth;
-        canvas.height = tempImg.naturalHeight;
-        
-        // 绘制原始图像
-        ctx.drawImage(tempImg, 0, 0);
+        // 根据是否是放大视图来设置canvas尺寸
+        if (isEnlargedView) {
+            canvas.width = tempImg.naturalWidth * scale;
+            canvas.height = tempImg.naturalHeight * scale;
+            // 缩放上下文以适应放大的尺寸
+            ctx.scale(scale, scale);
+            // 绘制原始图像（需要考虑缩放）
+            ctx.drawImage(tempImg, 0, 0, tempImg.naturalWidth, tempImg.naturalHeight);
+            // 恢复上下文变换
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+        } else {
+            canvas.width = tempImg.naturalWidth;
+            canvas.height = tempImg.naturalHeight;
+            ctx.drawImage(tempImg, 0, 0);
+        }
         
         // 如果点云投影开关打开，添加点云投影
         if (projectionToggle && projectionToggle.checked) {
             const positions = pointCloud.geometry.attributes.position.array;
-            projectPointsToImage(positions, calibData[camId], canvas, ctx);
+            // 传递缩放因子到点云投影函数
+            projectPointsToImage(positions, calibData[camId], canvas, ctx, scale);
         }
         
         // 更新图像
@@ -103,15 +134,23 @@ export function showProjectedImage(viewerImg, camId) {
         if (boxToggle && boxToggle.checked) {
             viewerImg.onload = () => {
                 import('./boxHandler.js').then(module => {
-                    module.projectBoxesToImages(viewerImg, 2.0);
+                    module.projectBoxesToImages(viewerImg, scale);
                 });
             };
         }
     };
+
+    // 加载原始图像
     tempImg.src = originalSrc;
+
+    // 处理加载错误
+    tempImg.onerror = () => {
+        console.error('加载原始图像失败:', originalSrc);
+        viewerImg.src = originalSrc;
+    };
 }
 
-function projectPointsToImage(positions, calib, canvas, ctx) {
+function projectPointsToImage(positions, calib, canvas, ctx, scale = 1.0) {
     let minZ = Infinity, maxZ = -Infinity;
     
     // 首先计算所有可见点的Z值范围
@@ -160,17 +199,27 @@ function projectPointsToImage(positions, calib, canvas, ctx) {
         const hue = 360 * (1 - normalizedZ);
         const rgb = hsvToRgb(hue, 1.0, 1.0);
         
-        const x = (calib.intrinsic.elements[0] * pointCam.x + 
-                  calib.intrinsic.elements[1] * pointCam.y + 
-                  calib.intrinsic.elements[2] * pointCam.z) / pointCam.z;
-                  
-        const y = (calib.intrinsic.elements[3] * pointCam.x + 
-                  calib.intrinsic.elements[4] * pointCam.y + 
-                  calib.intrinsic.elements[5] * pointCam.z) / pointCam.z;
+        // 计算投影坐标
+        let x = (calib.intrinsic.elements[0] * pointCam.x +
+            calib.intrinsic.elements[1] * pointCam.y +
+            calib.intrinsic.elements[2] * pointCam.z) / pointCam.z;
+
+        let y = (calib.intrinsic.elements[3] * pointCam.x +
+            calib.intrinsic.elements[4] * pointCam.y +
+            calib.intrinsic.elements[5] * pointCam.z) / pointCam.z;
         
+        // 应用缩放因子
+        if (scale !== 1.0) {
+            x = x * scale;
+            y = y * scale;
+        }
+
+        // 检查是否在图像范围内
         if (x >= 0 && x < canvas.width && y >= 0 && y < canvas.height) {
             ctx.beginPath();
-            ctx.arc(x, y, 2, 0, 2 * Math.PI);
+            // 点的大小也随缩放变化
+            const pointSize = Math.max(1, Math.floor(2 * scale));
+            ctx.arc(x, y, pointSize, 0, 2 * Math.PI);
             ctx.fillStyle = `rgb(${rgb.r * 255}, ${rgb.g * 255}, ${rgb.b * 255})`;
             ctx.fill();
         }

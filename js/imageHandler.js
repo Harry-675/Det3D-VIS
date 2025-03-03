@@ -205,7 +205,7 @@ function showEnlargedImage(imgElement) {
             return;
         }
         
-        // 设置放大图像属性
+        // 设置放大图像属性 - 确保属性正确传递
         enlargedImg.alt = imgElement.alt;
         enlargedImg.setAttribute('data-cam-id', camId);
         enlargedImg.setAttribute('data-original-src', originalSrc);
@@ -218,16 +218,42 @@ function showEnlargedImage(imgElement) {
         const projectionToggle = document.getElementById('projectionToggle');
         const boxToggle = document.getElementById('boxToggle');
         
+        // 记录投影状态，避免重复处理
+        let projectionApplied = false;
+
         // 图像加载完成后的处理
-        enlargedImg.onload = function() {
+        enlargedImg.onload = async function () {
+            if (projectionApplied) return; // 避免重复处理
+            projectionApplied = true;
+
             enlargedImg.style.opacity = '1';
             
-            // 根据开关状态决定是否显示投影
-            if (projectionToggle.checked) {
-                showProjectedImage(enlargedImg, camId);
-            } else if (boxToggle.checked) {
-                // 如果只显示3D框
-                projectBoxesToImages(enlargedImg, 2.0);
+            try {
+                // 根据开关状态决定是否显示投影
+                if (projectionToggle.checked) {
+                    // 从projectionHandler导入并调用函数
+                    const projectionModule = await import('./projectionHandler.js');
+                    await new Promise(resolve => {
+                        // 确保图像完全加载
+                        if (enlargedImg.complete) {
+                            projectionModule.showProjectedImage(enlargedImg, camId);
+                            resolve();
+                        } else {
+                            enlargedImg.onload = () => {
+                                projectionModule.showProjectedImage(enlargedImg, camId);
+                                resolve();
+                            };
+                        }
+                    });
+                } else if (boxToggle.checked) {
+                    // 如果只显示3D框，使用原始图像后应用框
+                    const boxModule = await import('./boxHandler.js');
+                    boxModule.projectBoxesToImages(enlargedImg, 2.0);
+                }
+            } catch (err) {
+                console.error('处理放大图像投影时出错:', err);
+                // 出错时显示原始图像
+                enlargedImg.src = originalSrc;
             }
         };
         
@@ -254,29 +280,64 @@ function showEnlargedImage(imgElement) {
         document.addEventListener('keydown', handleKeyDown);
         
         // 添加投影开关事件监听
-        const handleProjectionToggle = () => {
-            if (projectionToggle.checked) {
-                showProjectedImage(enlargedImg, camId);
-            } else {
-                enlargedImg.src = originalSrc;
-                if (boxToggle.checked) {
-                    // 如果关闭点云投影但保持3D框显示
-                    setTimeout(() => {
-                        projectBoxesToImages(enlargedImg, 2.0);
-                    }, 100);
+        const handleProjectionToggle = async () => {
+            try {
+                // 重置处理状态
+                projectionApplied = false;
+
+                if (projectionToggle.checked) {
+                    const projectionModule = await import('./projectionHandler.js');
+                    await new Promise(resolve => {
+                        // 确保图像完全加载
+                        if (enlargedImg.complete) {
+                            projectionModule.showProjectedImage(enlargedImg, camId);
+                            resolve();
+                        } else {
+                            enlargedImg.onload = () => {
+                                projectionModule.showProjectedImage(enlargedImg, camId);
+                                resolve();
+                            };
+                        }
+                    });
+                } else {
+                    enlargedImg.src = originalSrc;
+                    if (boxToggle.checked) {
+                        // 等待图像加载后应用框
+                        await new Promise(resolve => {
+                            enlargedImg.onload = async () => {
+                                const boxModule = await import('./boxHandler.js');
+                                boxModule.projectBoxesToImages(enlargedImg, 2.0);
+                                resolve();
+                            };
+                        });
+                    }
                 }
+            } catch (err) {
+                console.error('切换投影时出错:', err);
+                // 出错时恢复原始图像
+                enlargedImg.src = originalSrc;
             }
         };
         
-        const handleBoxToggle = () => {
+        const handleBoxToggle = async () => {
             if (!projectionToggle.checked) {
-                // 只有在未开启点云投影时才单独处理框的显示
-                if (boxToggle.checked) {
-                    enlargedImg.src = originalSrc;
-                    setTimeout(() => {
-                        projectBoxesToImages(enlargedImg, 2.0);
-                    }, 100);
-                } else {
+                try {
+                    if (boxToggle.checked) {
+                        enlargedImg.src = originalSrc;
+                        // 等待图像加载后应用框
+                        await new Promise(resolve => {
+                            enlargedImg.onload = async () => {
+                                const boxModule = await import('./boxHandler.js');
+                                boxModule.projectBoxesToImages(enlargedImg, 2.0);
+                                resolve();
+                            };
+                        });
+                    } else {
+                        enlargedImg.src = originalSrc;
+                    }
+                } catch (err) {
+                    console.error('切换框显示时出错:', err);
+                // 出错时恢复原始图像
                     enlargedImg.src = originalSrc;
                 }
             }

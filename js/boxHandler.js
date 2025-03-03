@@ -389,18 +389,22 @@ function projectBoxToImage(box, calib, canvas, ctx, scale = 1) {
         // 如果在相机后方，则跳过
         if (camPoint.z <= 0) return null;
         
-        // 投影到图像平面
-        let x = (calib.intrinsic.elements[0] * camPoint.x + 
+        // 投影到图像平面 - 使用标准的针孔相机模型
+        const unscaledX = (calib.intrinsic.elements[0] * camPoint.x + 
                 calib.intrinsic.elements[1] * camPoint.y + 
                 calib.intrinsic.elements[2] * camPoint.z) / camPoint.z;
                 
-        let y = (calib.intrinsic.elements[3] * camPoint.x + 
+        const unscaledY = (calib.intrinsic.elements[3] * camPoint.x + 
                 calib.intrinsic.elements[4] * camPoint.y + 
                 calib.intrinsic.elements[5] * camPoint.z) / camPoint.z;
         
-        // 应用缩放 - 这是关键修改
+        // 应用缩放 - 适应不同的视图大小
+        let x = unscaledX;
+        let y = unscaledY;
+
         if (scale !== 1) {
-            // 参考点云投影方法，只缩放坐标，不改变检测范围
+            // 对于放大的图像，我们需要相应地缩放投影点
+            // 注意：这里假设图像中心不变，只是放大了
             x = x * scale;
             y = y * scale;
         }
@@ -425,7 +429,7 @@ function projectBoxToImage(box, calib, canvas, ctx, scale = 1) {
     
     // 设置绘图样式
     ctx.strokeStyle = strokeStyle;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = Math.max(1, 2 * scale * 0.5); // 线宽也随缩放变化，但不要太粗
     
     // 绘制连接线 - 底部矩形
     drawLine(ctx, imagePoints[0], imagePoints[1]);
@@ -454,9 +458,10 @@ function projectBoxToImage(box, calib, canvas, ctx, scale = 1) {
             const topPoint = visiblePoints.reduce((min, p) => p.y < min.y ? p : min, visiblePoints[0]);
             
             // 设置文本样式
-            ctx.font = '14px Arial';
+            const fontSize = Math.max(10, Math.round(14 * scale * 0.7)); // 字体大小随缩放变化
+            ctx.font = `${fontSize}px Arial`;
             ctx.fillStyle = strokeStyle;
-            ctx.fillText(labelText, topPoint.x, topPoint.y - 5);
+            ctx.fillText(labelText, topPoint.x, topPoint.y - 5 * scale);
         }
     }
     
