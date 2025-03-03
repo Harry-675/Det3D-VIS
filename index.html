@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Point Cloud and Image Viewer</title>
+    <style>
+        body { margin: 0; }
+        .container {
+            display: flex;
+            width: 100vw;
+            height: 100vh;
+        }
+        #imagePanel {
+            width: 35%;
+            height: 100%;
+            background: #1a1a1a;
+            overflow-y: auto;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+        #pointCloudPanel {
+            width: 65%;
+            height: 100%;
+        }
+        .camera-image {
+            width: 100%;
+            height: auto;
+            margin-bottom: 10px;
+            cursor: pointer;
+            display: block;
+        }
+        .camera-view {
+            width: 100%;
+            padding: 10px;
+            box-sizing: border-box;
+            cursor: pointer;
+        }
+        .camera-view img {
+            width: 100%;
+            margin-bottom: 10px;
+        }
+        #fileInput, #directoryInput {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 100;
+            opacity: 0;
+            width: 0.1px;
+            height: 0.1px;
+            overflow: hidden;
+        }
+        /* 添加图片放大显示的样式 */
+        #imageViewer {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 1000;
+            overflow: hidden;
+        }
+        #imageViewer img {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            max-width: 90%;
+            max-height: 90%;
+            object-fit: contain;
+        }
+        #closeButton {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 30px;
+            height: 30px;
+            background: rgba(255, 255, 255, 0.3);
+            border: none;
+            color: white;
+            font-size: 20px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+        }
+        #closeButton:hover {
+            background: rgba(255, 255, 255, 0.5);
+        }
+        /* 添加新的样式 */
+        .control-panel {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            right: 10px;
+            height: 40px;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .navigation-panel {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 20px;
+            z-index: 100;
+        }
+        
+        .btn {
+            padding: 8px 16px;
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+        
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            border-color: rgba(255, 255, 255, 0.4);
+        }
+        
+        #currentFile {
+            margin-left: auto;
+            color: white;
+            padding: 8px 16px;
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        /* 添加开关按钮样式 */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 28px;
+            margin-left: 10px;
+        }
+        
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(255, 255, 255, 0.2);
+            transition: .4s;
+            border-radius: 34px;
+        }
+        
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        
+        input:checked + .slider {
+            background-color: #2196F3;
+        }
+        
+        input:checked + .slider:before {
+            transform: translateX(32px);
+        }
+        
+        .switch-label {
+            color: white;
+            margin-left: 10px;
+            font-size: 14px;
+        }
+        
+        .camera-label {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 14px;
+            z-index: 1;
+        }
+        
+        .camera-view {
+            position: relative;
+            width: 100%;
+            padding: 10px;
+            box-sizing: border-box;
+            cursor: pointer;
+        }
+        
+        .frame-nav {
+            position: absolute;
+            bottom: 60px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 5px;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 5px;
+            border-radius: 4px;
+            max-width: 80vw;
+            overflow-x: auto;
+            align-items: center;
+        }
+        
+        .frame-number {
+            color: white;
+            padding: 5px 10px;
+            cursor: pointer;
+            border-radius: 3px;
+            min-width: 20px;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+        
+        .frame-number:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        
+        .frame-number.active {
+            background: rgba(255, 255, 255, 0.3);
+        }
+        
+        .frame-ellipsis {
+            color: white;
+            padding: 5px;
+            cursor: pointer;
+        }
+        
+        .frame-ellipsis:hover {
+            color: #2196F3;
+        }
+        
+        /* 添加弹出框样式 */
+        .frame-popup {
+            display: none;
+            position: fixed;
+            left: 50%;
+            bottom: 100px;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.9);
+            padding: 20px;
+            border-radius: 8px;
+            max-width: 80vw;
+            max-height: 60vh;
+            overflow-y: auto;
+            z-index: 1001;
+        }
+        
+        .frame-popup .frame-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
+            gap: 5px;
+        }
+        
+        .enlarged-image-panel {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .enlarged-image {
+            max-width: 90%;
+            max-height: 90%;
+            object-fit: contain;
+        }
+        
+        .close-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 40px;
+            height: 40px;
+            background: rgba(255, 255, 255, 0.3);
+            border: none;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            z-index: 1001;
+        }
+        
+        .close-btn:hover {
+            background: rgba(255, 255, 255, 0.5);
+        }
+    </style>
+</head>
+<body>
+    <div class="control-panel">
+        <button class="btn" onclick="document.getElementById('fileInput').click()">Open File</button>
+        <button class="btn" onclick="document.getElementById('directoryInput').click()">Open Directory</button>
+        <label class="switch">
+            <input type="checkbox" id="projectionToggle">
+            <span class="slider"></span>
+        </label>
+        <span class="switch-label">Show Projection</span>
+        <label class="switch">
+            <input type="checkbox" id="boxToggle" checked>
+            <span class="slider"></span>
+        </label>
+        <span class="switch-label">Show Boxes</span>
+        <div id="currentFile"></div>
+    </div>
+    <div class="frame-nav" id="frameNav"></div>
+    <div class="frame-popup" id="framePopup">
+        <div class="frame-grid" id="frameGrid"></div>
+    </div>
+    <div class="navigation-panel">
+        <button class="btn" id="prevFrame">Previous Frame</button>
+        <button class="btn" id="nextFrame">Next Frame</button>
+    </div>
+    <input type="file" id="fileInput" accept=".json">
+    <input type="file" id="directoryInput" webkitdirectory directory multiple>
+    <div class="container">
+        <div id="imagePanel"></div>
+        <div id="pointCloudPanel"></div>
+    </div>
+    <!-- 添加图片查看器 -->
+    <div id="imageViewer">
+        <div class="viewer-controls">
+            <button id="closeButton">&times;</button>
+            <label class="switch">
+                <input type="checkbox" id="viewerProjectionToggle">
+                <span class="slider"></span>
+            </label>
+            <span class="switch-label">Show Projection</span>
+            <label class="switch">
+                <input type="checkbox" id="viewerBoxToggle" checked>
+                <span class="slider"></span>
+            </label>
+            <span class="switch-label">Show Boxes</span>
+        </div>
+        <img id="viewerImage" src="" alt="">
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/PCDLoader.js"></script>
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>
