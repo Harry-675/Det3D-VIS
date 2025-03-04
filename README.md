@@ -24,7 +24,24 @@
 ## 快速开始
 
 1. 克隆仓库：
-```
+   ```bash
+   git clone https://github.com/yourusername/pointcloud-viewer.git
+   cd pointcloud-viewer
+   ```
+
+2. 启动服务器：
+   ```bash
+   # 使用 Python 3
+   python -m http.server 8000
+
+   # 或使用 Python 2
+   python -m SimpleHTTPServer 8000
+   ```
+
+3. 在浏览器中访问：
+   ```
+   http://localhost:8000
+   ```
 
 ## 依赖库
 
@@ -40,6 +57,40 @@
 - Safari
 - Edge
 
+## 数据格式要求
+
+1. JSON文件格式：
+   ```json
+   {
+       "frame": {
+           "pcd": "path/to/pointcloud.pcd",
+           "cam_1": "path/to/camera1.jpg",
+           "cam_2": "path/to/camera2.jpg",
+           "cam_3": "path/to/camera3.jpg",
+           "calib1": "path/to/calibration1.json",
+           "calib2": "path/to/calibration2.json",
+           "calib3": "path/to/calibration3.json"
+       }
+   }
+   ```
+
+2. 标定文件格式：
+   ```json
+   {
+       "intrinsic": [
+           fx, 0, cx,
+           0, fy, cy,
+           0, 0, 1
+       ],
+       "extrinsic": [
+           r11, r12, r13, t1,
+           r21, r22, r23, t2,
+           r31, r32, r33, t3,
+           0, 0, 0, 1
+       ]
+   }
+   ```
+
 ## 注意事项
 
 1. 确保数据文件路径正确
@@ -47,18 +98,6 @@
 3. 所有路径应为相对于JSON文件的相对路径
 4. 标定文件中的矩阵应为行主序
 5. 需要启动本地服务器来运行，直接打开HTML文件可能无法正常工作
-
-## 开发说明
-
-项目使用ES6模块化开发，主要模块包括：
-
-- scene.js: 负责Three.js场景的创建和管理
-- pointCloudHandler.js: 处理点云数据的加载和显示
-- imageHandler.js: 处理图像的加载和显示
-- projectionHandler.js: 处理点云到图像的投影
-- frameNavigation.js: 处理多帧数据的导航
-- fileHandler.js: 处理文件的加载和管理
-- utils.js: 提供通用工具函数
 
 ## 操作说明
 
@@ -81,71 +120,3 @@
 - 点击帧号：快速跳转到指定帧
 
 ## 项目结构
-
-```
-.
-├── index.html              # 主页面
-├── js/                     # JavaScript 模块
-│   ├── main.js            # 主入口
-│   ├── scene.js           # 场景管理
-│   ├── pointCloudHandler.js # 点云处理
-│   ├── imageHandler.js    # 图像处理
-│   ├── projectionHandler.js # 投影处理
-│   ├── frameNavigation.js # 帧导航
-│   ├── fileHandler.js     # 文件处理
-│   ├── init.js           # 初始化
-│   └── utils.js          # 工具函数
-└── README.md              # 说明文档
-```
-
-2. 启动服务器：
-```bash
-# 使用 Python 3
-python -m http.server 8000
-
-# 或使用 Python 2
-python -m SimpleHTTPServer 8000
-```
-
-3. 在浏览器中访问：
-```
-http://localhost:8000
-```
-
-## 数据格式要求
-
-1. JSON文件格式：
-```json
-{
-    "frame": {
-        "pcd": "path/to/pointcloud.pcd",
-        "cam_1": "path/to/camera1.jpg",
-        "cam_2": "path/to/camera2.jpg",
-        "cam_3": "path/to/camera3.jpg",
-        "calib1": "path/to/calibration1.json",
-        "calib2": "path/to/calibration2.json",
-        "calib3": "path/to/calibration3.json"
-    }
-}
-```
-
-2. 标定文件格式：
-```json
-{
-    "intrinsic": [
-        fx, 0, cx,
-        0, fy, cy,
-        0, 0, 1
-    ],
-    "extrinsic": [
-        r11, r12, r13, t1,
-        r21, r22, r23, t2,
-        r31, r32, r33, t3,
-        0, 0, 0, 1
-    ]
-}
-```
-
-## License
-
-MIT
