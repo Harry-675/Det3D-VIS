@@ -226,144 +226,148 @@ function showEnlargedImage(imgElement) {
         enlargedImg.style.opacity = '0';
         enlargedImg.style.transition = 'opacity 0.3s ease';
         
-        // 创建放大视图专用的开关控制区域
+        // 创建控制面板
         const controlsContainer = document.createElement('div');
-        controlsContainer.className = 'enlarged-controls';
         controlsContainer.style.position = 'absolute';
-        controlsContainer.style.right = '20px';
-        controlsContainer.style.top = '60px';
+        controlsContainer.style.top = '10px';
+        controlsContainer.style.right = '10px';
+        controlsContainer.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+        controlsContainer.style.padding = '12px 15px';
+        controlsContainer.style.borderRadius = '5px';
+        controlsContainer.style.zIndex = '1000';
         controlsContainer.style.display = 'flex';
         controlsContainer.style.flexDirection = 'column';
-        controlsContainer.style.alignItems = 'flex-start';
-        controlsContainer.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-        controlsContainer.style.padding = '15px';
-        controlsContainer.style.borderRadius = '8px';
+        controlsContainer.style.boxShadow = '0 2px 10px rgba(0, 0, 0, 0.3)';
 
-        // 添加开关样式（只需添加一次）
+        // 添加统一的开关样式
+        const toggleStyles = document.createElement('style');
+        toggleStyles.id = 'enlarged-toggle-style';
+        toggleStyles.textContent = `
+        /* 开关容器 */
+        .viewer-toggle-container {
+            display: flex;
+            align-items: center;
+            margin-right: 15px;
+            margin-bottom: 10px;
+            user-select: none;
+        }
+
+        /* 开关标签 */
+        .viewer-toggle-label {
+            margin-left: 10px;
+            font-size: 13px;
+            color: #f0f0f0;
+            cursor: pointer;
+            transition: color 0.3s;
+            font-weight: 500;
+            letter-spacing: 0.5px;
+        }
+
+        /* 开关样式 */
+        .viewer-toggle {
+            position: relative;
+            display: inline-block;
+            width: 38px;
+            height: 19px;
+        }
+
+        .viewer-toggle input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .viewer-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .3s;
+            border-radius: 19px;
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
+        }
+
+        .viewer-slider:before {
+            position: absolute;
+            content: "";
+            height: 15px;
+            width: 15px;
+            left: 2px;
+            bottom: 2px;
+            background-color: white;
+            transition: .3s;
+            border-radius: 50%;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+        }
+
+        input:checked + .viewer-slider {
+            background-color: #2196F3;
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3), 0 0 5px rgba(33, 150, 243, 0.7);
+        }
+
+        /* 点云投影开关特殊样式 */
+        input#viewerProjectionToggle:checked + .viewer-slider {
+            background-color: #2196F3;
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3), 0 0 5px rgba(33, 150, 243, 0.7);
+        }
+
+        /* 3D框开关特殊样式 */
+        input#viewerBoxToggle:checked + .viewer-slider {
+            background-color: #2196F3;
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3), 0 0 5px rgba(33, 150, 243, 0.7);
+        }
+
+        input:checked + .viewer-slider:before {
+            transform: translateX(19px);
+        }
+
+        /* 标签颜色 */
+        input:checked ~ .viewer-toggle-label {
+            color: #2196F3;
+            text-shadow: 0 0 2px rgba(33, 150, 243, 0.4);
+        }
+        `;
+
+        // 添加样式到文档头
         if (!document.getElementById('enlarged-toggle-style')) {
-            const sliderStyle = document.createElement('style');
-            sliderStyle.id = 'enlarged-toggle-style';
-            sliderStyle.textContent = `
-                .viewer-toggle {
-                    position: relative;
-                    display: inline-block;
-                    width: 60px;
-                    height: 28px;
-                    margin: 0 10px;
-                }
-                .viewer-toggle input {
-                    opacity: 0;
-                    width: 0;
-                    height: 0;
-                }
-                .viewer-slider {
-                    position: absolute;
-                    cursor: pointer;
-                    top: 0;
-                    left: 0;
-                    right: 0;
-                    bottom: 0;
-                    background-color: #ccc;
-                    transition: .4s;
-                    border-radius: 34px;
-                }
-                .viewer-slider:before {
-                    position: absolute;
-                    content: "";
-                    height: 20px;
-                    width: 20px;
-                    left: 4px;
-                    bottom: 4px;
-                    background-color: white;
-                    transition: .4s;
-                    border-radius: 50%;
-                }
-                input:checked + .viewer-slider {
-                    background-color: #2196F3;
-                    box-shadow: 0 0 8px rgba(33, 150, 243, 0.8);
-                }
-                /* 点云投影开关特殊样式 */
-                input#viewerProjectionToggle:checked + .viewer-slider {
-                    background-color: #2196F3;
-                    box-shadow: 0 0 8px rgba(33, 150, 243, 0.8);
-                }
-                /* 3D框开关特殊样式 */
-                input#viewerBoxToggle:checked + .viewer-slider {
-                    background-color: #2196F3;
-                    box-shadow: 0 0 8px rgba(33, 150, 243, 0.8);
-                }
-                input:checked + .viewer-slider:before {
-                    transform: translateX(32px);
-                }
-                .viewer-toggle-label {
-                    margin-left: 10px;
-                    font-size: 14px;
-                    color: #555;
-                    cursor: pointer;
-                    user-select: none;
-                    transition: color 0.3s ease;
-                }
-                /* 当开关打开时，标签文字也变色 */
-                input:checked ~ .viewer-toggle-label {
-                    color: #333;
-                    font-weight: bold;
-                }
-                input#viewerProjectionToggle:checked ~ .viewer-toggle-label {
-                    color: #0D47A1;
-                }
-                input#viewerBoxToggle:checked ~ .viewer-toggle-label {
-                    color: #0D47A1;
-                }
-            `;
-            document.head.appendChild(sliderStyle);
+            document.head.appendChild(toggleStyles);
         }
 
         // 创建标题
         const controlsTitle = document.createElement('div');
         controlsTitle.textContent = '显示控制';
-        controlsTitle.style.color = 'white';
+        controlsTitle.style.color = '#fff';
         controlsTitle.style.fontWeight = 'bold';
-        controlsTitle.style.marginBottom = '15px';
-        controlsTitle.style.fontSize = '16px';
+        controlsTitle.style.marginBottom = '12px';
+        controlsTitle.style.fontSize = '14px';
+        controlsTitle.style.textAlign = 'center';
+        controlsTitle.style.letterSpacing = '1px';
+        controlsTitle.style.textShadow = '0 1px 2px rgba(0, 0, 0, 0.5)';
+        controlsTitle.style.borderBottom = '1px solid rgba(255, 255, 255, 0.2)';
+        controlsTitle.style.paddingBottom = '8px';
         controlsContainer.appendChild(controlsTitle);
 
         // 创建放大视图专用的投影开关
         const projectionToggleContainer = document.createElement('div');
-        projectionToggleContainer.style.display = 'flex';
-        projectionToggleContainer.style.alignItems = 'center';
-        projectionToggleContainer.style.marginBottom = '15px';
+        projectionToggleContainer.className = 'viewer-toggle-container';
         projectionToggleContainer.style.width = '100%';
 
-        // 创建带有switch类的label
+        // 创建投影开关
         const projectionToggleLabel = document.createElement('label');
-        projectionToggleLabel.className = 'switch';
-        projectionToggleLabel.style.position = 'relative';
-        projectionToggleLabel.style.display = 'inline-block';
-        projectionToggleLabel.style.width = '60px';
-        projectionToggleLabel.style.height = '28px';
+        projectionToggleLabel.className = 'viewer-toggle';
 
         // 创建input
         const projectionToggle = document.createElement('input');
         projectionToggle.type = 'checkbox';
         projectionToggle.id = 'viewerProjectionToggle';
-        // 初始状态设置为关闭
         projectionToggle.checked = false;
-        projectionToggle.style.opacity = '0';
-        projectionToggle.style.width = '0';
-        projectionToggle.style.height = '0';
 
         // 创建slider
         const projectionSlider = document.createElement('span');
         projectionSlider.className = 'viewer-slider';
-        projectionSlider.style.position = 'absolute';
-        projectionSlider.style.cursor = 'pointer';
-        projectionSlider.style.top = '0';
-        projectionSlider.style.left = '0';
-        projectionSlider.style.right = '0';
-        projectionSlider.style.bottom = '0';
-        projectionSlider.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
-        projectionSlider.style.transition = '.4s';
-        projectionSlider.style.borderRadius = '34px';
 
         // 组装投影开关
         projectionToggleLabel.appendChild(projectionToggle);
@@ -371,66 +375,43 @@ function showEnlargedImage(imgElement) {
 
         // 创建开关文本
         const projectionToggleText = document.createElement('span');
-        projectionToggleText.className = 'switch-label';
+        projectionToggleText.className = 'viewer-toggle-label';
         projectionToggleText.textContent = '点云投影';
-        projectionToggleText.style.color = 'white';
-        projectionToggleText.style.marginLeft = '10px';
-        projectionToggleText.style.fontSize = '14px';
 
         // 组装投影开关容器
         projectionToggleContainer.appendChild(projectionToggleLabel);
         projectionToggleContainer.appendChild(projectionToggleText);
         controlsContainer.appendChild(projectionToggleContainer);
 
-        // 创建放大视图专用的包围盒开关
+        // 创建放大视图专用的3D框开关
         const boxToggleContainer = document.createElement('div');
-        boxToggleContainer.style.display = 'flex';
-        boxToggleContainer.style.alignItems = 'center';
+        boxToggleContainer.className = 'viewer-toggle-container';
         boxToggleContainer.style.width = '100%';
 
-        // 创建带有switch类的label
+        // 创建3D框开关
         const boxToggleLabel = document.createElement('label');
-        boxToggleLabel.className = 'switch';
-        boxToggleLabel.style.position = 'relative';
-        boxToggleLabel.style.display = 'inline-block';
-        boxToggleLabel.style.width = '60px';
-        boxToggleLabel.style.height = '28px';
+        boxToggleLabel.className = 'viewer-toggle';
 
         // 创建input
         const boxToggle = document.createElement('input');
         boxToggle.type = 'checkbox';
         boxToggle.id = 'viewerBoxToggle';
-        boxToggle.checked = true;
-        boxToggle.style.opacity = '0';
-        boxToggle.style.width = '0';
-        boxToggle.style.height = '0';
+        boxToggle.checked = false;
 
         // 创建slider
         const boxSlider = document.createElement('span');
         boxSlider.className = 'viewer-slider';
-        boxSlider.style.position = 'absolute';
-        boxSlider.style.cursor = 'pointer';
-        boxSlider.style.top = '0';
-        boxSlider.style.left = '0';
-        boxSlider.style.right = '0';
-        boxSlider.style.bottom = '0';
-        boxSlider.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
-        boxSlider.style.transition = '.4s';
-        boxSlider.style.borderRadius = '34px';
 
-        // 组装包围盒开关
+        // 组装3D框开关
         boxToggleLabel.appendChild(boxToggle);
         boxToggleLabel.appendChild(boxSlider);
 
         // 创建开关文本
         const boxToggleText = document.createElement('span');
-        boxToggleText.className = 'switch-label';
-        boxToggleText.textContent = '3D框显示';
-        boxToggleText.style.color = 'white';
-        boxToggleText.style.marginLeft = '10px';
-        boxToggleText.style.fontSize = '14px';
+        boxToggleText.className = 'viewer-toggle-label';
+        boxToggleText.textContent = '3D框投影';
 
-        // 组装包围盒开关容器
+        // 组装3D框开关容器
         boxToggleContainer.appendChild(boxToggleLabel);
         boxToggleContainer.appendChild(boxToggleText);
         controlsContainer.appendChild(boxToggleContainer);

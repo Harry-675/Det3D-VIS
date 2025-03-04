@@ -113,21 +113,18 @@ export function updateProjection() {
                     img.src = dataUrl;
                     console.log(`相机 ${camId} 点云投影成功应用`);
 
-                    // 为缩略图添加指示器，表明已应用了点云投影
+                    // 为缩略图添加指示器，表明已应用了点云投影（但不添加边框）
                     img.classList.add('has-projection');
-                    img.style.border = '2px solid #2196F3';
                 } else {
                     console.error(`相机 ${camId} 点云投影失败`);
                     img.src = originalSrc; // 恢复原始图像
                     img.classList.remove('has-projection');
-                    img.style.border = ''; // 移除边框
                 }
                 resolve();
             };
             tempImg.onerror = () => {
                 console.error(`加载图像失败: ${originalSrc}`);
                 img.classList.remove('has-projection');
-                img.style.border = ''; // 移除边框
                 resolve();
             };
             tempImg.src = originalSrc;
@@ -472,16 +469,42 @@ async function projectPointsToImage(camId, canvas, ctx, scale = 1.0, debug = fal
 
             // 检查点是否在画布范围内
             if (x >= 0 && x < canvas.width && y >= 0 && y < canvas.height) {
-                // 计算深度颜色（从红到蓝的渐变）
+                // 计算深度颜色（使用更美观的深度渐变色）
                 const depth = (pointCam.z - minZ) / (maxZ - minZ);
-                const r = Math.floor(255 * (1 - depth));
-                const g = 0;
-                const b = Math.floor(255 * depth);
+
+                // 使用HSV颜色模型，转换为彩虹色谱
+                // H: 0(红色) --> 240(蓝色)
+                const hue = 240 * depth;
+                const saturation = 0.8;
+                const value = 0.9;
+
+                // 转换HSV到RGB
+                const h = hue / 60;
+                const i = Math.floor(h);
+                const f = h - i;
+                const p = value * (1 - saturation);
+                const q = value * (1 - saturation * f);
+                const t = value * (1 - saturation * (1 - f));
+
+                let r, g, b;
+
+                switch (i) {
+                    case 0: r = value; g = t; b = p; break;
+                    case 1: r = q; g = value; b = p; break;
+                    case 2: r = p; g = value; b = t; break;
+                    case 3: r = p; g = q; b = value; break;
+                    case 4: r = t; g = p; b = value; break;
+                    default: r = value; g = p; b = q; break;
+                }
+
+                const R = Math.floor(r * 255);
+                const G = Math.floor(g * 255);
+                const B = Math.floor(b * 255);
 
                 culledPoints.push({
                     x: x,
                     y: y,
-                    color: `rgb(${r}, ${g}, ${b})`,
+                    color: `rgb(${R}, ${G}, ${B})`,
                     depth: pointCam.z
                 });
             }
@@ -498,7 +521,7 @@ async function projectPointsToImage(camId, canvas, ctx, scale = 1.0, debug = fal
         culledPoints.sort((a, b) => b.depth - a.depth);
 
         // 绘制点云，使用更明显的颜色和大小
-        const pointSize = Math.max(2, Math.min(4, scale)); // 限制点大小在合理范围内
+        const pointSize = Math.max(1.5, Math.min(3, scale)); // 减小点的大小
 
         // 保存当前状态
         ctx.save();

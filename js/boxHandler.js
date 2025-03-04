@@ -449,16 +449,8 @@ function processImageWithCanvas(img, sourceImage, canvas, ctx, calib, camId, sca
             // 更新图像源
             img.src = dataURL;
 
-            // 添加指示器，表明已应用了框投影
+            // 添加指示器，表明已应用了框投影（但不添加边框）
             img.classList.add('has-boxes-projection');
-
-            // 添加或更新边框颜色
-            const hasPcdProjection = img.classList.contains('has-projection');
-            if (hasPcdProjection) {
-                img.style.border = '2px solid #8BC34A'; // 绿色边框表示同时有点云和框
-            } else {
-                img.style.border = '2px solid #FF9800'; // 橙色边框仅表示框
-            }
 
             console.log('已更新图像源为包含框投影的Canvas');
         } else {
@@ -527,7 +519,7 @@ function projectBoxToImage(box, calib, canvas, ctx, scale = 1) {
         const boxMatrix = new THREE.Matrix4();
         boxMatrix.makeRotationFromEuler(new THREE.Euler(
             box.rotation.x,
-            box.rotation.y,
+            box.rotation.y, 
             box.rotation.z
         ));
         boxMatrix.setPosition(box.position);
@@ -588,8 +580,22 @@ function projectBoxToImage(box, calib, canvas, ctx, scale = 1) {
             return false;
         }
 
-        // 保存当前颜色
-        const boxColor = box.userData.objectColor || '#00FF00';
+        // 提取3D框真实颜色
+        let boxColor;
+
+        if (box.material && box.material.color) {
+            // 从THREE.js材质中提取颜色
+            const color = box.material.color;
+            boxColor = `rgb(${Math.floor(color.r * 255)}, ${Math.floor(color.g * 255)}, ${Math.floor(color.b * 255)})`;
+        } else if (box.userData.objectColor) {
+            // 从用户数据中获取颜色
+            boxColor = box.userData.objectColor;
+        } else {
+            // 使用默认颜色
+            boxColor = box.userData.objectType === 'Car' ? '#FF5722' :
+                box.userData.objectType === 'Pedestrian' ? '#4CAF50' :
+                    box.userData.objectType === 'Cyclist' ? '#2196F3' : '#FFC107';
+        }
 
         // 绘制框的线条，连接顶点形成立方体
         const edges = [
@@ -599,7 +605,7 @@ function projectBoxToImage(box, calib, canvas, ctx, scale = 1) {
         ];
 
         ctx.strokeStyle = boxColor;
-        ctx.lineWidth = Math.max(1, scale * 1.5); // 根据缩放调整线宽
+        ctx.lineWidth = Math.max(1, scale * 0.75); // 减小线宽，使线条更细
 
         let visibleEdgeCount = 0;
 
@@ -729,8 +735,8 @@ export function handleEnlargedImage(enlargedImg, scale = 2.0) {
                     // 更新图像源
                     enlargedImg.src = dataURL;
 
-                    // 添加边框指示器
-                    enlargedImg.style.border = '2px solid #FF9800';
+                    // 添加类以标记已应用投影（不添加边框）
+                    enlargedImg.classList.add('has-boxes-projection');
                     console.log('已更新放大图像源为包含3D框投影的画布');
 
                     resolve(true);
