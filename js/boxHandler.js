@@ -177,295 +177,463 @@ function clearProjectedBoxes() {
 
 // 修复 projectBoxesToImages 函数
 export function projectBoxesToImages(specificImageElement = null, scale = 1) {
-    // 如果框被设置为不可见，则直接返回
-    if (!boxesVisible) return;
-    
-    try {
-        const calibData = getCalibData();
-        if (!calibData) {
-            console.error('无法获取标定数据');
-            return;
-        }
-        
-        console.log('可用标定数据:', {
-            'keys': Object.keys(calibData),
-            'boxCount': boxes.length,
-            'scale': scale
-        });
-        
-        // 如果提供了特定图像，只处理该图像
-        if (specificImageElement) {
-            let camId = specificImageElement.getAttribute('data-cam-id');
-            
-            // 如果没有data-cam-id属性，尝试从alt获取
-            if (!camId && specificImageElement.alt) {
-                const match = specificImageElement.alt.match(/Camera (\d+)/);
-                if (match) {
-                    camId = `cam_${match[1]}`;
-                    // 补充属性
-                    specificImageElement.setAttribute('data-cam-id', camId);
+    return new Promise(async (resolve, reject) => {
+        try {
+            console.log(`开始处理包围盒投影, 图像ID: ${specificImageElement ? specificImageElement.id : '所有图像'}, 缩放: ${scale}`);
+
+            // 如果框被设置为不可见，则直接返回
+            if (!boxesVisible) {
+                console.log('包围盒设置为不可见，跳过投影');
+                resolve();
+                return;
+            }
+
+            // 检查是否有边界框
+            if (!boxes || boxes.length === 0) {
+                console.log('没有边界框可投影');
+                resolve();
+                return;
+            }
+
+            console.log(`当前有 ${boxes.length} 个边界框`);
+
+            const calibData = getCalibData();
+            if (!calibData) {
+                console.error('无法获取标定数据');
+                reject(new Error('无法获取标定数据'));
+                return;
+            }
+
+            console.log('可用标定数据:', {
+                'keys': Object.keys(calibData),
+                'boxCount': boxes.length,
+                'scale': scale
+            });
+
+            // 如果提供了特定图像，只处理该图像
+            if (specificImageElement) {
+                let camId = specificImageElement.getAttribute('data-cam-id');
+
+                // 如果没有data-cam-id属性，尝试从alt获取
+                if (!camId && specificImageElement.alt) {
+                    const match = specificImageElement.alt.match(/Camera (\d+)/);
+                    if (match) {
+                        camId = `cam_${match[1]}`;
+                        specificImageElement.setAttribute('data-cam-id', camId);
+                        console.log(`为图像添加缺失的data-cam-id: ${camId}`);
+                    }
+                }
+
+                if (!camId) {
+                    console.error('图像缺少相机ID标识', { img: specificImageElement });
+                    reject(new Error('图像缺少相机ID标识'));
+                    return;
+                }
+
+                const calib = calibData[camId];
+                if (!calib) {
+                    console.error(`找不到相机ID: ${camId} 的标定数据`);
+                    reject(new Error(`找不到相机ID: ${camId} 的标定数据`));
+                    return;
+                }
+
+                console.log(`使用相机ID: ${camId} 的标定数据`);
+
+                // 检查是否是放大图像
+                const isEnlargedImage = specificImageElement.id === 'enlargedImg';
+                console.log(`是否是放大图像: ${isEnlargedImage}`);
+
+                // 获取开关状态
+                let boxToggle;
+                if (isEnlargedImage) {
+                    // 对于放大图像，使用放大视图专用开关
+                    boxToggle = document.getElementById('viewerBoxToggle');
+                    console.log('使用放大视图专用包围盒开关:', boxToggle ? boxToggle.checked : 'not found');
+                } else {
+                    // 对于普通图像，使用主开关
+                    boxToggle = document.getElementById('boxToggle');
+                }
+
+                // 只有当开关打开时才处理，无论是放大图像还是普通图像
+                if (boxToggle && boxToggle.checked) {
+                    // 根据图像类型选择不同的处理方式
+                    if (isEnlargedImage) {
+                        try {
+                            // 使用专门处理放大图像的函数
+                            await handleEnlargedImage(specificImageElement, scale);
+                            console.log('已应用3D框投影到放大图像');
+                            resolve();
+                        } catch (err) {
+                            console.error('处理放大图像时出错:', err);
+                            reject(err);
+                        }
+                    } else {
+                        // 普通图像处理
+                        try {
+                            await processImage(specificImageElement, calib, camId, scale);
+                            console.log('已应用包围盒投影到普通图像');
+                            resolve();
+                        } catch (err) {
+                            console.error('处理图像时出错:', err);
+                            reject(err);
+                        }
+                    }
+                } else {
+                    console.log('包围盒开关关闭，跳过投影');
+                    resolve();
+                }
+
+                return;
+            }
+
+            // 否则处理所有图像
+            let processedImages = 0;
+            const promises = [];
+
+            document.querySelectorAll('#imagePanel img').forEach((img, index) => {
+                let camId = img.getAttribute('data-cam-id');
+
+                // 如果没有data-cam-id属性，尝试从索引设置一个
+                if (!camId) {
+                    camId = `cam_${index + 1}`;
+                    img.setAttribute('data-cam-id', camId);
                     console.log(`为图像添加缺失的data-cam-id: ${camId}`);
                 }
-            }
-            
-            if (!camId) {
-                console.error('无法确定图像的相机ID', { 
-                    element: specificImageElement.id,
-                    alt: specificImageElement.alt
+
+                // 确保原始图像源
+                if (!img.getAttribute('data-original-src')) {
+                    img.setAttribute('data-original-src', img.src);
+                    console.log(`为图像添加缺失的原始源`);
+                }
+
+                const calib = calibData[camId];
+                if (!calib) {
+                    console.warn(`找不到相机 ${camId} 的标定数据`, {
+                        availableData: Object.keys(calibData)
+                    });
+                    return;
+                }
+
+                // 传递缩放比例并收集Promise
+                promises.push(processImage(img, calib, camId, scale));
+                processedImages++;
+            });
+
+            // 等待所有处理完成
+            Promise.all(promises)
+                .then(() => {
+                    console.log(`处理了 ${processedImages} 个图像的包围盒投影`);
+                    resolve();
+                })
+                .catch(err => {
+                    console.error('处理图像包围盒投影时出错:', err);
+                    reject(err);
                 });
-                return;
-            }
-            
-            const calib = calibData[camId];
-            if (!calib) {
-                console.error(`找不到相机 ${camId} 的标定数据`, { 
-                    availableData: Object.keys(calibData)
-                });
-                return;
-            }
-            
-            // 确保原始图像源
-            if (!specificImageElement.getAttribute('data-original-src')) {
-                specificImageElement.setAttribute('data-original-src', specificImageElement.src);
-                console.log(`为图像添加缺失的原始源`);
-            }
-            
-            // 传递缩放比例
-            processImage(specificImageElement, calib, camId, scale);
-            return;
+
+        } catch (err) {
+            console.error('包围盒投影过程中出错:', err);
+            reject(err);
         }
-        
-        // 否则处理所有图像
-        let processedImages = 0;
-        document.querySelectorAll('#imagePanel img').forEach((img, index) => {
-            let camId = img.getAttribute('data-cam-id');
-            
-            // 如果没有data-cam-id属性，尝试从索引设置一个
-            if (!camId) {
-                camId = `cam_${index+1}`;
-                img.setAttribute('data-cam-id', camId);
-                console.log(`为图像添加缺失的data-cam-id: ${camId}`);
-            }
-            
-            // 确保原始图像源
-            if (!img.getAttribute('data-original-src')) {
-                img.setAttribute('data-original-src', img.src);
-                console.log(`为图像添加缺失的原始源`);
-            }
-            
-            const calib = calibData[camId];
-            if (!calib) {
-                console.warn(`找不到相机 ${camId} 的标定数据`, {
-                    availableData: Object.keys(calibData)
-                });
-                return;
-            }
-            
-            // 传递缩放比例
-            processImage(img, calib, camId, scale);
-            processedImages++;
-        });
-        
-        console.log(`共处理了${processedImages}个图像的投影，缩放比例: ${scale}`);
-    } catch (err) {
-        console.error("投影边界框时出错:", err);
-    }
+    });
 }
 
 // 优化图像处理函数
 function processImage(img, calib, camId, scale = 1) {
-    try {
-        // 创建用于绘制的canvas
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        
-        // 如果图像已经有内容（比如点云投影），先保存当前图像
-        const currentImage = new Image();
-        currentImage.src = img.src;
-        
-        // 加载原始图像
-        const originalSrc = img.getAttribute('data-original-src');
-        if (!originalSrc) {
-            console.error('图像没有data-original-src属性', { img });
-            return;
-        }
-        
-        currentImage.onload = () => {
-            try {
-                // 设置canvas尺寸与图像相同
-                canvas.width = currentImage.width;
-                canvas.height = currentImage.height;
-                
-                // 绘制当前图像（可能包含点云投影）
-                ctx.drawImage(currentImage, 0, 0);
-                
-                // 投影每个边界框
-                let boxesProjected = 0;
-                boxes.forEach(box => {
-                    if (box.type === 'Sprite') return; // 跳过标签精灵
-                    
-                    try {
-                        const result = projectBoxToImage(box, calib, canvas, ctx, scale);
-                        if (result) boxesProjected++;
-                    } catch (e) {
-                        console.error('投影边界框时出错:', e);
-                    }
-                });
-                
-                console.log(`已将 ${boxesProjected} 个边界框投影到相机 ${camId}, 缩放比例: ${scale}`);
-                
-                // 更新图像
-                img.src = canvas.toDataURL();
-            } catch (err) {
-                console.error("处理图像投影时出错:", err);
-                // 出错时恢复原始图像
-                img.src = originalSrc;
+    return new Promise((resolve, reject) => {
+        try {
+            console.log(`开始处理图像包围盒, ID: ${img.id}, camId: ${camId}, scale: ${scale}`);
+
+            // 检查是否有边界框
+            if (!boxes || boxes.length === 0) {
+                console.log('没有边界框可投影');
+                resolve();
+                return;
             }
-        };
-        
-        currentImage.onerror = (err) => {
-            console.error("加载当前图像时出错:", err);
-            img.src = originalSrc; // 确保有图像显示
-        };
+
+            // 创建用于绘制的canvas
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+
+            // 如果图像已经有内容（比如点云投影），先保存当前图像
+            const currentImage = new Image();
+            currentImage.src = img.src;
+
+            // 获取原始图像源
+            const originalSrc = img.getAttribute('data-original-src');
+            if (!originalSrc) {
+                console.error('图像没有data-original-src属性', { img });
+                reject(new Error('图像没有data-original-src属性'));
+                return;
+            }
+
+            console.log(`图像当前源: ${img.src}, 原始源: ${originalSrc}`);
+
+            // 设置超时，防止图像加载失败导致Promise永远不解析
+            const timeout = setTimeout(() => {
+                console.warn('图像加载超时，使用当前图像继续处理');
+                processImageWithCanvas(img, currentImage, canvas, ctx, calib, camId, scale, resolve, reject);
+            }, 3000);
+
+            currentImage.onload = () => {
+                clearTimeout(timeout);
+                processImageWithCanvas(img, currentImage, canvas, ctx, calib, camId, scale, resolve, reject);
+            };
+
+            currentImage.onerror = (err) => {
+                clearTimeout(timeout);
+                console.error("加载当前图像时出错:", err);
+
+                // 如果当前图像加载失败，尝试使用原始图像
+                const fallbackImage = new Image();
+                fallbackImage.src = originalSrc;
+
+                fallbackImage.onload = () => {
+                    console.log('使用原始图像作为备用');
+                    processImageWithCanvas(img, fallbackImage, canvas, ctx, calib, camId, scale, resolve, reject);
+                };
+
+                fallbackImage.onerror = (fallbackErr) => {
+                    console.error("加载原始图像也失败:", fallbackErr);
+                    reject(new Error('无法加载图像'));
+                };
+            };
+        } catch (err) {
+            console.error("处理图像时出错:", err);
+            reject(err);
+        }
+    });
+}
+
+// 辅助函数，处理图像和canvas
+function processImageWithCanvas(img, sourceImage, canvas, ctx, calib, camId, scale, resolve, reject) {
+    try {
+        console.log(`处理图像Canvas, 图像ID: ${img.id}, camId: ${camId}, scale: ${scale}`);
+        console.log('原始图像尺寸:', {
+            width: sourceImage.naturalWidth,
+            height: sourceImage.naturalHeight
+        });
+
+        // 设置canvas大小与原始图像相同
+        canvas.width = sourceImage.naturalWidth;
+        canvas.height = sourceImage.naturalHeight;
+
+        // 确保标定数据包含图像尺寸
+        if (!calib.width || !calib.height) {
+            calib.width = sourceImage.naturalWidth;
+            calib.height = sourceImage.naturalHeight;
+            console.log(`为标定数据设置图像尺寸: ${calib.width}x${calib.height}`);
+        }
+
+        console.log(`Canvas尺寸: ${canvas.width}x${canvas.height}`);
+
+        // 绘制原始图像到canvas
+        ctx.drawImage(sourceImage, 0, 0);
+
+        // 跟踪成功投影的框数量
+        let projectedBoxCount = 0;
+
+        // 投影每个框到图像
+        boxes.forEach(box => {
+            if (projectBoxToImage(box, calib, canvas, ctx, scale)) {
+                projectedBoxCount++;
+            }
+        });
+
+        console.log(`成功投影了 ${projectedBoxCount}/${boxes.length} 个框到图像`);
+
+        // 如果有成功投影的框，更新图像
+        if (projectedBoxCount > 0) {
+            // 将canvas内容转换为图像数据
+            const dataURL = canvas.toDataURL('image/png');
+
+            // 更新图像源
+            img.src = dataURL;
+
+            // 添加指示器，表明已应用了框投影
+            img.classList.add('has-boxes-projection');
+
+            // 添加或更新边框颜色
+            const hasPcdProjection = img.classList.contains('has-projection');
+            if (hasPcdProjection) {
+                img.style.border = '2px solid #8BC34A'; // 绿色边框表示同时有点云和框
+            } else {
+                img.style.border = '2px solid #FF9800'; // 橙色边框仅表示框
+            }
+
+            console.log('已更新图像源为包含框投影的Canvas');
+        } else {
+            console.warn('没有框被成功投影，保持原图像不变');
+        }
+
+        resolve(projectedBoxCount > 0);
     } catch (err) {
-        console.error("处理图像时出错:", err);
+        console.error("处理canvas时出错:", err);
+        reject(err);
     }
 }
 
 function projectBoxToImage(box, calib, canvas, ctx, scale = 1) {
-    console.log(`投影框: ${box.userData.objectType || 'unknown'}, ID: ${box.userData.objectId || 'unknown'}`, {
-        'canvas': `${canvas.width}x${canvas.height}`,
-        'calib': calib ? '有效' : '无效',
-        'scale': scale
-    });
-    
-    // 获取边界框的尺寸信息
-    const dimensions = box.userData.dimensions;
-    if (!dimensions) {
-        console.warn('边界框没有尺寸信息', {box: box.userData});
-        return false;
-    }
-    
-    // 边界框的半尺寸
-    const halfSize = {
-        x: dimensions.x / 2,
-        y: dimensions.y / 2,
-        z: dimensions.z / 2
-    };
-    
-    // 在局部坐标系中的8个顶点
-    const localVertices = [
-        new THREE.Vector3(-halfSize.x, -halfSize.y, -halfSize.z),
-        new THREE.Vector3(-halfSize.x, -halfSize.y, halfSize.z),
-        new THREE.Vector3(-halfSize.x, halfSize.y, -halfSize.z),
-        new THREE.Vector3(-halfSize.x, halfSize.y, halfSize.z),
-        new THREE.Vector3(halfSize.x, -halfSize.y, -halfSize.z),
-        new THREE.Vector3(halfSize.x, -halfSize.y, halfSize.z),
-        new THREE.Vector3(halfSize.x, halfSize.y, -halfSize.z),
-        new THREE.Vector3(halfSize.x, halfSize.y, halfSize.z)
-    ];
-    
-    // 创建一个矩阵来表示盒子的变换
-    const boxMatrix = new THREE.Matrix4();
-    boxMatrix.makeRotationFromEuler(new THREE.Euler(
-        box.rotation.x, 
-        box.rotation.y, 
-        box.rotation.z
-    ));
-    boxMatrix.setPosition(box.position);
-    
-    // 变换到世界坐标
-    const worldVertices = localVertices.map(vertex => {
-        const worldVertex = vertex.clone();
-        worldVertex.applyMatrix4(boxMatrix);
-        return worldVertex;
-    });
-    
-    // 投影到图像平面
-    const imagePoints = worldVertices.map(vertex => {
-        // 变换到相机坐标系
-        const camPoint = vertex.clone().applyMatrix4(calib.extrinsic);
-        
-        // 如果在相机后方，则跳过
-        if (camPoint.z <= 0) return null;
-        
-        // 投影到图像平面 - 使用标准的针孔相机模型
-        const unscaledX = (calib.intrinsic.elements[0] * camPoint.x + 
-                calib.intrinsic.elements[1] * camPoint.y + 
-                calib.intrinsic.elements[2] * camPoint.z) / camPoint.z;
-                
-        const unscaledY = (calib.intrinsic.elements[3] * camPoint.x + 
-                calib.intrinsic.elements[4] * camPoint.y + 
-                calib.intrinsic.elements[5] * camPoint.z) / camPoint.z;
-        
-        // 应用缩放 - 适应不同的视图大小
-        let x = unscaledX;
-        let y = unscaledY;
+    try {
+        console.log(`投影框: ${box.userData.objectType || 'unknown'}, ID: ${box.userData.objectId || 'unknown'}`, {
+            'canvas': `${canvas.width}x${canvas.height}`,
+            'calib': calib ? '有效' : '无效',
+            'scale': scale
+        });
 
-        if (scale !== 1) {
-            // 对于放大的图像，我们需要相应地缩放投影点
-            // 注意：这里假设图像中心不变，只是放大了
-            x = x * scale;
-            y = y * scale;
+        // 获取边界框的尺寸信息
+        const dimensions = box.userData.dimensions;
+        if (!dimensions) {
+            console.warn('边界框没有尺寸信息', { box: box.userData });
+            return false;
         }
-        
-        // 检查是否在图像范围内
-        if (x >= 0 && x < canvas.width && y >= 0 && y < canvas.height) {
-            return { x, y };
+
+        // 确保标定数据包含图像尺寸
+        if (!calib.width || !calib.height) {
+            // 使用canvas尺寸作为默认值
+            calib.width = canvas.width;
+            calib.height = canvas.height;
+            console.warn('标定数据缺少尺寸信息，使用画布尺寸:', calib.width, calib.height);
         }
-        
-        return null;
-    });
-    
-    // 如果有足够的点在图像平面上，绘制边界框
-    const visiblePoints = imagePoints.filter(p => p !== null);
-    if (visiblePoints.length < 2) {
+
+        // 计算图像缩放比例
+        const imgScaleX = canvas.width / calib.width;
+        const imgScaleY = canvas.height / calib.height;
+        const imgScaled = imgScaleX !== 1 || imgScaleY !== 1;
+
+        if (imgScaled) {
+            console.log('检测到图像尺寸调整，缩放比例:', imgScaleX, imgScaleY);
+        }
+
+        // 边界框的半尺寸
+        const halfSize = {
+            x: dimensions.x / 2,
+            y: dimensions.y / 2,
+            z: dimensions.z / 2
+        };
+
+        // 在局部坐标系中的8个顶点
+        const localVertices = [
+            new THREE.Vector3(-halfSize.x, -halfSize.y, -halfSize.z),
+            new THREE.Vector3(-halfSize.x, -halfSize.y, halfSize.z),
+            new THREE.Vector3(-halfSize.x, halfSize.y, -halfSize.z),
+            new THREE.Vector3(-halfSize.x, halfSize.y, halfSize.z),
+            new THREE.Vector3(halfSize.x, -halfSize.y, -halfSize.z),
+            new THREE.Vector3(halfSize.x, -halfSize.y, halfSize.z),
+            new THREE.Vector3(halfSize.x, halfSize.y, -halfSize.z),
+            new THREE.Vector3(halfSize.x, halfSize.y, halfSize.z)
+        ];
+
+        // 创建一个矩阵来表示盒子的变换
+        const boxMatrix = new THREE.Matrix4();
+        boxMatrix.makeRotationFromEuler(new THREE.Euler(
+            box.rotation.x,
+            box.rotation.y,
+            box.rotation.z
+        ));
+        boxMatrix.setPosition(box.position);
+
+        // 变换到世界坐标
+        const worldVertices = localVertices.map(vertex => {
+            const worldVertex = vertex.clone();
+            worldVertex.applyMatrix4(boxMatrix);
+            return worldVertex;
+        });
+
+        // 提取和应用内参矩阵
+        let fx, fy, cx, cy;
+
+        if (calib.intrinsic && calib.intrinsic.elements) {
+            fx = calib.intrinsic.elements[0];
+            fy = calib.intrinsic.elements[4];
+            cx = calib.intrinsic.elements[2];
+            cy = calib.intrinsic.elements[5];
+        } else {
+            console.error('内参矩阵无效');
+            return false;
+        }
+
+        // 调整内参以适应图像尺寸变化
+        if (imgScaled) {
+            fx *= imgScaleX;
+            fy *= imgScaleY;
+            cx *= imgScaleX;
+            cy *= imgScaleY;
+            console.log('调整后的内参:', { fx, fy, cx, cy });
+        }
+
+        // 投影到图像平面
+        const imagePoints = worldVertices.map(vertex => {
+            // 变换到相机坐标系
+            const camPoint = vertex.clone().applyMatrix4(calib.extrinsic);
+
+            // 如果在相机后方，则跳过
+            if (camPoint.z <= 0) return null;
+
+            // 投影到图像平面 - 使用简化的投影模型
+            const x = fx * (camPoint.x / camPoint.z) + cx;
+            const y = fy * (camPoint.y / camPoint.z) + cy;
+
+            // 检查是否在图像范围内
+            if (x >= 0 && x < canvas.width && y >= 0 && y < canvas.height) {
+                return { x, y };
+            }
+
+            return null;
+        });
+
+        // 如果有足够的点在图像平面上，绘制边界框
+        const visiblePoints = imagePoints.filter(p => p !== null);
+        if (visiblePoints.length < 2) {
+            console.warn('框不可见，可见点数:', visiblePoints.length);
+            return false;
+        }
+
+        // 保存当前颜色
+        const boxColor = box.userData.objectColor || '#00FF00';
+
+        // 绘制框的线条，连接顶点形成立方体
+        const edges = [
+            [0, 1], [1, 3], [3, 2], [2, 0], // 底面
+            [4, 5], [5, 7], [7, 6], [6, 4], // 顶面
+            [0, 4], [1, 5], [2, 6], [3, 7]  // 连接底面和顶面的边
+        ];
+
+        ctx.strokeStyle = boxColor;
+        ctx.lineWidth = Math.max(1, scale * 1.5); // 根据缩放调整线宽
+
+        let visibleEdgeCount = 0;
+
+        for (const [i, j] of edges) {
+            const p1 = imagePoints[i];
+            const p2 = imagePoints[j];
+
+            if (p1 && p2) {
+                drawLine(ctx, p1, p2);
+                visibleEdgeCount++;
+            }
+        }
+
+        // 标记物体ID和类型
+        if (visibleEdgeCount > 0) {
+            // 找到所有可见点的中心
+            const centerX = visiblePoints.reduce((sum, p) => sum + p.x, 0) / visiblePoints.length;
+            const centerY = visiblePoints.reduce((sum, p) => sum + p.y, 0) / visiblePoints.length;
+
+            // 绘制标签
+            ctx.fillStyle = boxColor;
+            ctx.font = `${Math.max(10, scale * 11)}px Arial`;
+            ctx.textAlign = 'center';
+
+            // 绘制物体类型和ID
+            const label = `${box.userData.objectType || 'Unknown'} ${box.userData.objectId || ''}`;
+            ctx.fillText(label, centerX, centerY);
+        }
+
+        return visibleEdgeCount > 0;
+    } catch (error) {
+        console.error('投影3D框时出错:', error);
         return false;
     }
-    
-    // 获取颜色
-    const color = box.material.color;
-    const strokeStyle = `rgb(${Math.round(color.r * 255)}, ${Math.round(color.g * 255)}, ${Math.round(color.b * 255)})`;
-    
-    // 设置绘图样式
-    ctx.strokeStyle = strokeStyle;
-    ctx.lineWidth = Math.max(1, 2 * scale * 0.5); // 线宽也随缩放变化，但不要太粗
-    
-    // 绘制连接线 - 底部矩形
-    drawLine(ctx, imagePoints[0], imagePoints[1]);
-    drawLine(ctx, imagePoints[1], imagePoints[5]);
-    drawLine(ctx, imagePoints[5], imagePoints[4]);
-    drawLine(ctx, imagePoints[4], imagePoints[0]);
-    
-    // 顶部矩形
-    drawLine(ctx, imagePoints[2], imagePoints[3]);
-    drawLine(ctx, imagePoints[3], imagePoints[7]);
-    drawLine(ctx, imagePoints[7], imagePoints[6]);
-    drawLine(ctx, imagePoints[6], imagePoints[2]);
-    
-    // 连接顶部和底部
-    drawLine(ctx, imagePoints[0], imagePoints[2]);
-    drawLine(ctx, imagePoints[1], imagePoints[3]);
-    drawLine(ctx, imagePoints[5], imagePoints[7]);
-    drawLine(ctx, imagePoints[4], imagePoints[6]);
-    
-    // 添加文本标签
-    if (box.userData && box.userData.objectType) {
-        const labelText = `${box.userData.objectType} ${box.userData.objectId || ''}`;
-        
-        // 找出最上方的顶点
-        if (visiblePoints.length > 0) {
-            const topPoint = visiblePoints.reduce((min, p) => p.y < min.y ? p : min, visiblePoints[0]);
-            
-            // 设置文本样式
-            const fontSize = Math.max(10, Math.round(14 * scale * 0.7)); // 字体大小随缩放变化
-            ctx.font = `${fontSize}px Arial`;
-            ctx.fillStyle = strokeStyle;
-            ctx.fillText(labelText, topPoint.x, topPoint.y - 5 * scale);
-        }
-    }
-    
-    return true;
 }
 
 function drawLine(ctx, p1, p2) {
@@ -478,16 +646,114 @@ function drawLine(ctx, p1, p2) {
 }
 
 // 添加一个专门处理放大图像的函数
-function handleEnlargedImage(enlargedImg, scale = 2.0) {
-    console.log('专门处理放大图像', {
-        'id': enlargedImg.id,
-        'data-cam-id': enlargedImg.getAttribute('data-cam-id'),
-        'hasOriginalSrc': !!enlargedImg.getAttribute('data-original-src'),
-        'scale': scale
+export function handleEnlargedImage(enlargedImg, scale = 2.0) {
+    return new Promise(async (resolve, reject) => {
+        try {
+            console.log('处理放大图像3D框投影', {
+                'id': enlargedImg.id,
+                'data-cam-id': enlargedImg.getAttribute('data-cam-id'),
+                'hasOriginalSrc': !!enlargedImg.getAttribute('data-original-src'),
+                'naturalSize': `${enlargedImg.naturalWidth}x${enlargedImg.naturalHeight}`,
+                'displaySize': `${enlargedImg.width || enlargedImg.clientWidth}x${enlargedImg.height || enlargedImg.clientHeight}`,
+                'scale': scale
+            });
+
+            const camId = enlargedImg.getAttribute('data-cam-id');
+            if (!camId) {
+                console.error('放大图像缺少相机ID');
+                reject(new Error('放大图像缺少相机ID'));
+                return;
+            }
+
+            const calibData = getCalibData();
+            if (!calibData || !calibData[camId]) {
+                console.error('找不到相机标定数据', camId);
+                reject(new Error(`找不到相机ID: ${camId} 的标定数据`));
+                return;
+            }
+
+            const calib = calibData[camId];
+
+            // 确保标定数据包含图像尺寸
+            if (!calib.width || !calib.height) {
+                calib.width = enlargedImg.naturalWidth;
+                calib.height = enlargedImg.naturalHeight;
+                console.log(`为放大图像设置标定数据尺寸: ${calib.width}x${calib.height}`);
+            }
+
+            // 创建临时画布和上下文
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+
+            // 加载当前图像内容（可能已包含点云投影）
+            const currentImage = new Image();
+            currentImage.crossOrigin = 'anonymous';
+
+            // 设置超时
+            const timeout = setTimeout(() => {
+                console.warn('放大图像加载超时');
+                reject(new Error('放大图像加载超时'));
+            }, 3000);
+
+            currentImage.onload = () => {
+                clearTimeout(timeout);
+
+                // 设置画布大小与当前图像相同
+                canvas.width = currentImage.naturalWidth;
+                canvas.height = currentImage.naturalHeight;
+
+                // 绘制当前图像到画布
+                ctx.drawImage(currentImage, 0, 0);
+
+                console.log('放大图像尺寸:', {
+                    naturalWidth: currentImage.naturalWidth,
+                    naturalHeight: currentImage.naturalHeight,
+                    canvasWidth: canvas.width,
+                    canvasHeight: canvas.height
+                });
+
+                // 投影每个框到画布上
+                let boxesProjected = 0;
+                boxes.forEach(box => {
+                    if (projectBoxToImage(box, calib, canvas, ctx, scale)) {
+                        boxesProjected++;
+                    }
+                });
+
+                console.log(`成功投影 ${boxesProjected}/${boxes.length} 个3D框到放大图像`);
+
+                if (boxesProjected > 0) {
+                    // 将画布内容转换为图像数据
+                    const dataURL = canvas.toDataURL('image/png');
+
+                    // 更新图像源
+                    enlargedImg.src = dataURL;
+
+                    // 添加边框指示器
+                    enlargedImg.style.border = '2px solid #FF9800';
+                    console.log('已更新放大图像源为包含3D框投影的画布');
+
+                    resolve(true);
+                } else {
+                    console.warn('没有3D框成功投影到放大图像');
+                    resolve(false);
+                }
+            };
+
+            currentImage.onerror = (err) => {
+                clearTimeout(timeout);
+                console.error('加载放大图像失败:', err);
+                reject(err);
+            };
+
+            // 开始加载当前图像
+            currentImage.src = enlargedImg.src;
+
+        } catch (error) {
+            console.error('处理放大图像3D框投影时出错:', error);
+            reject(error);
+        }
     });
-    
-    // 使用通用函数投影，传递缩放比例
-    projectBoxesToImages(enlargedImg, scale);
 }
 
 // 导出状态获取函数
