@@ -1,14 +1,24 @@
 import { hsvToRgb } from './utils.js';
 import { getScene, getCamera, getControls } from './scene.js';
+import { getFileUrl } from './fileHandler.js';
 
 let pointCloud;
 
 export function loadPointCloud(pcdPath) {
+    if (!pcdPath) {
+        console.error('未提供点云路径');
+        return;
+    }
+
+    const pcdUrl = getFileUrl(pcdPath);
+    console.log('加载点云文件:', pcdPath);
+    console.log('点云URL:', pcdUrl);
+
     const loader = new THREE.PCDLoader();  // 使用全局 THREE
     const scene = getScene();
     const camera = getCamera();    
     loader.load(
-        pcdPath,
+        pcdUrl,
         function(points) {
             if (pointCloud) {
                 scene.remove(pointCloud);
@@ -33,7 +43,7 @@ export function loadPointCloud(pcdPath) {
         },
         function(error) {
             console.error('Error loading point cloud:', error);
-            console.log('Attempted to load:', pcdPath);
+            console.log('Attempted to load:', pcdUrl);
         }
     );
 }

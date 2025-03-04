@@ -40,7 +40,11 @@ export async function loadJsonFile(file, index = null) {
     const reader = new FileReader();
     reader.onload = async function(e) {
         const data = JSON.parse(e.target.result);
-        await loadCalibrationFiles(data.frame);
+
+        // 加载相机配置文件
+        if (data.frame.config) {
+            await loadCalibrationFiles(data.frame);
+        }
         
         // 加载标注文件
         if (data.frame.label) {
@@ -48,7 +52,10 @@ export async function loadJsonFile(file, index = null) {
         }
         
         loadImages(data.frame);
-        loadPointCloud(data.frame.pcd);
+        if (data.frame.undistort_lidar_path) {
+            const pcdPath = data.frame.lidar_path;
+            loadPointCloud(pcdPath);
+        }
         updateCurrentFileName(file.name);
     };
     reader.readAsText(file);
@@ -56,43 +63,114 @@ export async function loadJsonFile(file, index = null) {
 
 async function loadCalibrationFiles(frame) {
     calibData = {};
-    const calibFiles = ['calib1', 'calib2', 'calib3'];
     
-    console.log('开始加载标定文件', {
+    console.log('开始加载相机配置文件', {
         'frame': Object.keys(frame),
-        'calibFiles': calibFiles
     });
     
-    for (let i = 0; i < calibFiles.length; i++) {
-        const calibFile = frame[calibFiles[i]];
-        if (calibFile) {
-            try {
-                console.log(`加载标定文件: ${calibFiles[i]}`);
-                const response = await fetch(calibFile);
-                const data = await response.json();
-                
-                const camId = `cam_${i+1}`;
-                calibData[camId] = {
-                    extrinsic: new THREE.Matrix4().fromArray(data.extrinsic),
-                    intrinsic: new THREE.Matrix3().fromArray(data.intrinsic)
-                };
-                
-                console.log(`标定文件 ${calibFiles[i]} 加载成功，对应相机 ${camId}`);
-            } catch (error) {
-                console.error(`加载标定文件失败: ${calibFiles[i]}`, error);
+    if (frame.config) {
+        try {
+            console.log(`加载相机配置文件: ${frame.config}`);
+            const configPath = frame.config + '/cameras.cfg';
+            const configUrl = getFileUrl(configPath);
+            console.log(`配置文件URL: ${configUrl}`);
+            const response = await fetch(configUrl);
+
+            if (!response.ok) {
+                throw new Error(`配置文件加载失败: ${response.status} ${response.statusText}`);
             }
+
+            const configText = await response.text();
+
+            // 解析相机配置文件
+            const cameras = parseCalibrationConfig(configText);
+
+            for (const [cameraId, cameraConfig] of Object.entries(cameras)) {
+                calibData[cameraId] = cameraConfig;
+                console.log(`相机配置加载成功：${cameraId}`);
+            }
+        } catch (error) {
+            console.error(`加载相机配置文件失败`, error);
         }
     }
-    
-    console.log('所有标定文件加载完成', {
+
+    console.log('所有相机配置加载完成', {
         'availableCameras': Object.keys(calibData)
     });
+}
+
+// 解析相机配置文件的函数
+function parseCalibrationConfig(configText) {
+    const cameras = {};
+
+    // 匹配所有的相机配置块
+    const configBlocks = configText.match(/config\s*\{[\s\S]*?\}/g);
+
+    if (configBlocks) {
+        configBlocks.forEach(block => {
+            // 提取相机ID
+            const cameraDevMatch = block.match(/camera_dev:\s*"([^"]+)"/);
+            if (cameraDevMatch) {
+                const cameraId = cameraDevMatch[1];
+
+                // 提取外参
+                const extrinsicMatch = block.match(/extrinsic\s*\{[\s\S]*?sensor_to_cam\s*\{[\s\S]*?position\s*\{[\s\S]*?x:\s*([\d.-]+)[\s\S]*?y:\s*([\d.-]+)[\s\S]*?z:\s*([\d.-]+)[\s\S]*?orientation\s*\{[\s\S]*?qx:\s*([\d.-]+)[\s\S]*?qy:\s*([\d.-]+)[\s\S]*?qz:\s*([\d.-]+)[\s\S]*?qw:\s*([\d.-]+)/);
+
+                // 提取内参
+                const intrinsicMatch = block.match(/intrinsic\s*\{[\s\S]*?img_width:\s*(\d+)[\s\S]*?img_height:\s*(\d+)[\s\S]*?f_x:\s*([\d.]+)[\s\S]*?f_y:\s*([\d.]+)[\s\S]*?o_x:\s*([\d.]+)[\s\S]*?o_y:\s*([\d.]+)/);
+
+                if (extrinsicMatch && intrinsicMatch) {
+                    // 解析位置和方向
+                    const position = {
+                        x: parseFloat(extrinsicMatch[1]),
+                        y: parseFloat(extrinsicMatch[2]),
+                        z: parseFloat(extrinsicMatch[3])
+                    };
+
+                    const orientation = {
+                        x: parseFloat(extrinsicMatch[4]), // qx
+                        y: parseFloat(extrinsicMatch[5]), // qy
+                        z: parseFloat(extrinsicMatch[6]), // qz
+                        w: parseFloat(extrinsicMatch[7])  // qw
+                    };
+
+                    // 解析内参
+                    const width = parseInt(intrinsicMatch[1]);
+                    const height = parseInt(intrinsicMatch[2]);
+                    const fx = parseFloat(intrinsicMatch[3]);
+                    const fy = parseFloat(intrinsicMatch[4]);
+                    const cx = parseFloat(intrinsicMatch[5]);
+                    const cy = parseFloat(intrinsicMatch[6]);
+
+                    // 创建相机配置对象
+                    cameras[cameraId] = {
+                        extrinsic: {
+                            position: position,
+                            orientation: orientation
+                        },
+                        intrinsic: {
+                            width: width,
+                            height: height,
+                            fx: fx,
+                            fy: fy,
+                            cx: cx,
+                            cy: cy
+                        }
+                    };
+                }
+            }
+        });
+    }
+
+    return cameras;
 }
 
 async function loadLabelFile(labelPath) {
     try {
         console.log('正在加载标注文件:', labelPath);
-        const response = await fetch(labelPath);
+        const labelUrl = getFileUrl(labelPath);
+        console.log('标注文件URL:', labelUrl);
+        const response = await fetch(labelUrl);
         
         if (!response.ok) {
             throw new Error(`标注文件加载失败: ${response.status} ${response.statusText}`);
@@ -122,10 +200,9 @@ async function loadLabelFile(labelPath) {
 
 // 为所有图像元素添加必要的属性
 function setupImageAttributes() {
-    document.querySelectorAll('#imagePanel img').forEach((img, index) => {
-        const camId = `cam_${index+1}`;
-        img.setAttribute('data-cam-id', camId);
-        if (!img.getAttribute('data-original-src')) {
+    document.querySelectorAll('#imagePanel img').forEach((img) => {
+        const camId = img.getAttribute('data-cam-id');
+        if (camId && !img.getAttribute('data-original-src')) {
             img.setAttribute('data-original-src', img.src);
         }
         console.log(`设置图像属性: ${img.alt} -> ${camId}`);
@@ -158,4 +235,15 @@ export function setCurrentFileIndex(index) {
         currentFileIndex = index;
         loadJsonFile(jsonFiles[index], index);
     }
+}
+
+// 获取本地文件的URL (通过服务器)
+export function getFileUrl(path) {
+    if (!path) return null;
+    // 检查是否已经是URL格式
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+        return path;
+    }
+    // 使用本地服务器API转换路径
+    return `http://localhost:3000/file?path=${encodeURIComponent(path)}`;
 }

@@ -1,5 +1,6 @@
 import { showProjectedImage } from './projectionHandler.js';
 import { projectBoxesToImages, getBoxesVisibility } from './boxHandler.js';
+import { getFileUrl } from './fileHandler.js';
 
 let currentScale = 1;
 let isDragging = false;
@@ -49,20 +50,53 @@ export function loadImages(frame) {
     const imagePanel = document.getElementById('imagePanel');
     imagePanel.innerHTML = '';
     
-    // 相机ID列表，直接匹配JSON数据中的键
-    const cameraIds = ['cam_1', 'cam_2', 'cam_3'];
+    // 定义所有可能的相机ID
+    const cameraPrefixes = ['camera_', 'panoramic_', 'traffic_'];
+    const allCameras = [];
+
+    // 收集所有可用的相机和它们的图像路径
+    for (const key in frame) {
+        for (const prefix of cameraPrefixes) {
+            if (key.startsWith(prefix) && frame[key]) {
+                const cameraNumber = key.replace(prefix, '');
+                // 使用服务器URL
+                const imageUrl = getFileUrl(frame[key]);
+                allCameras.push({
+                    id: key,
+                    src: imageUrl,
+                    originalPath: frame[key],
+                    displayName: `${prefix.replace('_', ' ')}${cameraNumber}`
+                });
+            }
+        }
+    }
+
+    console.log(`找到 ${allCameras.length} 个相机图像`, allCameras);
     
     // 记录加载的图像数量，用于调试
     let loadedImages = 0;
     
-    cameraIds.forEach(camId => {
-        if (frame[camId]) {
+    // 创建相机图像容器
+    allCameras.forEach(camera => {
+        if (camera.src) {
+            // 创建相机视图容器
+            const cameraContainer = document.createElement('div');
+            cameraContainer.className = 'camera-container';
+
+            // 创建相机标题
+            const cameraTitle = document.createElement('div');
+            cameraTitle.className = 'camera-title';
+            cameraTitle.textContent = camera.displayName;
+            cameraContainer.appendChild(cameraTitle);
+
+    // 创建图像元素
             const img = document.createElement('img');
-            img.src = frame[camId];
-            img.alt = `Camera ${camId.replace('cam_', '')}`;
+            img.src = camera.src;
+            img.alt = camera.displayName;
             img.className = 'camera-image';
-            img.setAttribute('data-cam-id', camId);
-            img.setAttribute('data-original-src', frame[camId]);
+            img.setAttribute('data-cam-id', camera.id);
+            img.setAttribute('data-original-src', camera.src);
+            img.setAttribute('data-original-path', camera.originalPath);
             
             // 设置图像样式
             img.style.width = '100%';
@@ -73,12 +107,14 @@ export function loadImages(frame) {
             // 图像加载成功时记录
             img.onload = () => {
                 loadedImages++;
-                console.log(`图像加载完成(${loadedImages}): ${camId}`);
+                console.log(`图像加载完成(${loadedImages}/${allCameras.length}): ${camera.id}`);
             };
             
             // 图像加载失败时的处理
             img.onerror = () => {
-                console.error(`图像加载失败: ${camId}，路径: ${frame[camId]}`);
+                console.error(`图像加载失败: ${camera.id}，路径: ${camera.src}`);
+                console.error(`原始路径: ${camera.originalPath}`);
+                img.src = 'data:image/svg+xml;charset=UTF-8,%3Csvg%20width%3D%22318%22%20height%3D%22180%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20318%20180%22%20preserveAspectRatio%3D%22none%22%3E%3Cdefs%3E%3Cstyle%20type%3D%22text%2Fcss%22%3E%23holder_158bd1d28ef%20text%20%7B%20fill%3A%23868e96%3Bfont-weight%3Abold%3Bfont-family%3AArial%2C%20Helvetica%2C%20Open%20Sans%2C%20sans-serif%2C%20monospace%3Bfont-size%3A16pt%20%7D%20%3C%2Fstyle%3E%3C%2Fdefs%3E%3Cg%20id%3D%22holder_158bd1d28ef%22%3E%3Crect%20width%3D%22318%22%20height%3D%22180%22%20fill%3D%22%23777%22%3E%3C%2Frect%3E%3Cg%3E%3Ctext%20x%3D%22129.359375%22%20y%3D%2297.35%22%3E%E5%9B%BE%E5%83%8F%E5%8A%A0%E8%BD%BD%E5%A4%B1%E8%B4%A5%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E';
             };
             
             // 点击图像时放大显示
@@ -86,11 +122,20 @@ export function loadImages(frame) {
                 showEnlargedImage(this);
             });
             
-            imagePanel.appendChild(img);
-        } else {
-            console.warn(`未找到相机图像: ${camId}`);
+            cameraContainer.appendChild(img);
+            imagePanel.appendChild(cameraContainer);
         }
     });
+
+    // 如果没有找到任何图像，显示提示信息
+    if (allCameras.length === 0) {
+        const noImagesMsg = document.createElement('div');
+        noImagesMsg.textContent = '未找到任何相机图像';
+        noImagesMsg.style.color = 'white';
+        noImagesMsg.style.padding = '20px';
+        noImagesMsg.style.textAlign = 'center';
+        imagePanel.appendChild(noImagesMsg);
+    }
 }
 
 export function showImage(src, camId) {
