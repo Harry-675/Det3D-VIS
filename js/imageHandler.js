@@ -101,7 +101,7 @@ export function loadImages(frame) {
             // 设置图像样式
             img.style.width = '100%';
             img.style.height = 'auto';
-            img.style.marginBottom = '10px';
+            img.style.marginBottom = '0px';
             img.style.display = 'block';
             
             // 图像加载成功时记录

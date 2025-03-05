@@ -13,9 +13,9 @@ export function initScene(container) {
     // 创建相机 - 修改初始视角
     camera = new THREE.PerspectiveCamera(60, (window.innerWidth * 0.65) / window.innerHeight, 0.1, 1000);
     
-    // 设置初始位置，视线沿Z轴负方向，Y轴朝右
+    // 修改相机设置，使X轴朝上
     camera.position.set(0, 0, 50);
-    camera.up.set(0, 1, 0);
+    camera.up.set(1, 0, 0);
     camera.lookAt(0, 0, 0);
     
     // 创建渲染器

@@ -24,22 +24,30 @@
         .camera-image {
             width: 100%;
             height: auto;
-            margin-bottom: 10px;
+            margin-bottom: 0px;
             cursor: pointer;
             display: block;
         }
         .camera-container {
-            margin-bottom: 20px;
+            margin-bottom: 5px;
             background: rgba(0, 0, 0, 0.3);
             border-radius: 4px;
             overflow: hidden;
+            position: relative;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            padding-bottom: 5px;
         }
         .camera-title {
             background: rgba(0, 0, 0, 0.5);
             color: white;
-            padding: 8px 12px;
+            padding: 4px 8px;
             font-size: 14px;
             font-weight: bold;
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            z-index: 10;
+            border-top-right-radius: 4px;
         }
         .camera-view {
             width: 100%;

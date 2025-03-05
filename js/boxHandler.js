@@ -21,11 +21,28 @@ export function createBoxesFromLabels(labels) {
     // 清除旧的边界框
     clearBoxes(scene);
     
+    // 检查标注数据是否存在
+    if (!labels || labels.length === 0) {
+        console.log('没有标注数据，跳过创建3D边界框');
+        return;
+    }
+
     // 为每个标注创建3D边界框
     labels.forEach(label => {
         const { psr, obj_type, obj_id } = label;
+        if (!psr) {
+            console.warn('标注数据缺少psr字段:', label);
+            return; // 跳过此标注
+        }
+
         const { position, scale, rotation } = psr;
         
+        // 验证必要的字段
+        if (!position || !scale || !rotation) {
+            console.warn('标注数据缺少必要字段:', psr);
+            return; // 跳过此标注
+        }
+
         // 创建边界框几何体
         const boxGeometry = new THREE.BoxGeometry(scale.x, scale.y, scale.z);
         
@@ -666,15 +683,17 @@ export function handleEnlargedImage(enlargedImg, scale = 2.0) {
 
             const camId = enlargedImg.getAttribute('data-cam-id');
             if (!camId) {
-                console.error('放大图像缺少相机ID');
-                reject(new Error('放大图像缺少相机ID'));
+                console.warn('放大图像缺少相机ID，不应用3D框投影');
+                // 不再抛出错误，而是直接返回
+                resolve(false);
                 return;
             }
 
             const calibData = getCalibData();
             if (!calibData || !calibData[camId]) {
-                console.error('找不到相机标定数据', camId);
-                reject(new Error(`找不到相机ID: ${camId} 的标定数据`));
+                console.warn(`找不到相机标定数据 ${camId}，不应用3D框投影`);
+                // 不再抛出错误，而是直接返回
+                resolve(false);
                 return;
             }
 
@@ -697,51 +716,66 @@ export function handleEnlargedImage(enlargedImg, scale = 2.0) {
 
             // 设置超时
             const timeout = setTimeout(() => {
-                console.warn('放大图像加载超时');
-                reject(new Error('放大图像加载超时'));
+                console.warn('放大图像加载超时，不应用3D框投影');
+                // 不再抛出错误，而是直接返回
+                resolve(false);
+                clearTimeout(timeout);
             }, 3000);
 
             currentImage.onload = () => {
                 clearTimeout(timeout);
 
-                // 设置画布大小与当前图像相同
-                canvas.width = currentImage.naturalWidth;
-                canvas.height = currentImage.naturalHeight;
+                try {
+                    // 设置画布大小与当前图像相同
+                    canvas.width = currentImage.naturalWidth;
+                    canvas.height = currentImage.naturalHeight;
 
-                // 绘制当前图像到画布
-                ctx.drawImage(currentImage, 0, 0);
+                    // 绘制当前图像到画布
+                    ctx.drawImage(currentImage, 0, 0);
 
-                console.log('放大图像尺寸:', {
-                    naturalWidth: currentImage.naturalWidth,
-                    naturalHeight: currentImage.naturalHeight,
-                    canvasWidth: canvas.width,
-                    canvasHeight: canvas.height
-                });
+                    console.log('放大图像尺寸:', {
+                        naturalWidth: currentImage.naturalWidth,
+                        naturalHeight: currentImage.naturalHeight,
+                        canvasWidth: canvas.width,
+                        canvasHeight: canvas.height
+                    });
 
-                // 投影每个框到画布上
-                let boxesProjected = 0;
-                boxes.forEach(box => {
-                    if (projectBoxToImage(box, calib, canvas, ctx, scale)) {
-                        boxesProjected++;
+                    // 检查是否有包围盒
+                    if (!boxes || boxes.length === 0) {
+                        console.warn('没有可用的3D包围盒数据，不应用投影');
+                        resolve(false);
+                        return;
                     }
-                });
 
-                console.log(`成功投影 ${boxesProjected}/${boxes.length} 个3D框到放大图像`);
+                    // 投影每个框到画布上
+                    let boxesProjected = 0;
+                    boxes.forEach(box => {
+                        if (projectBoxToImage(box, calib, canvas, ctx, scale)) {
+                            boxesProjected++;
+                        }
+                    });
 
-                if (boxesProjected > 0) {
-                    // 将画布内容转换为图像数据
-                    const dataURL = canvas.toDataURL('image/png');
+                    console.log(`成功投影 ${boxesProjected}/${boxes.length} 个3D框到放大图像`);
 
-                    // 更新图像源
-                    enlargedImg.src = dataURL;
+                    if (boxesProjected > 0) {
+                        // 将画布内容转换为图像数据
+                        const dataURL = canvas.toDataURL('image/png');
 
-                    // 添加类以标记已应用投影（不添加边框）
-                    enlargedImg.classList.add('has-boxes-projection');
-                    console.log('已更新放大图像源为包含3D框投影的画布');
+                        // 更新图像源
+                        enlargedImg.src = dataURL;
 
-                    resolve(true);
-                } else {
-                    console.warn('没有3D框成功投影到放大图像');
+                        // 添加类以标记已应用投影（不添加边框）
+                        enlargedImg.classList.add('has-boxes-projection');
+                        console.log('已更新放大图像源为包含3D框投影的画布');
+
+                        resolve(true);
+                    } else {
+                        console.warn('没有3D框成功投影到放大图像');
+                        resolve(false);
+                    }
+                } catch (error) {
+                    console.error('投影3D框到放大图像时出错:', error);
+                    // 不再抛出错误，而是返回失败结果
                     resolve(false);
                 }
             };
@@ -749,7 +783,8 @@ export function handleEnlargedImage(enlargedImg, scale = 2.0) {
             currentImage.onerror = (err) => {
                 clearTimeout(timeout);
                 console.error('加载放大图像失败:', err);
-                reject(err);
+                // 不再抛出错误，而是返回失败结果
+                resolve(false);
             };
 
             // 开始加载当前图像
@@ -757,7 +792,8 @@ export function handleEnlargedImage(enlargedImg, scale = 2.0) {
 
         } catch (error) {
             console.error('处理放大图像3D框投影时出错:', error);
-            reject(error);
+            // 不再抛出错误，而是返回失败结果
+            resolve(false);
         }
     });
 }

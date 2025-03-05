@@ -25,13 +25,17 @@ export function loadPointCloud(pcdPath) {
             }
             
             updatePointCloudColors(points);
+
+            // 调整点云坐标系，使X轴朝上
             pointCloud = points;
+
+            // 设置相机位置和方向
+            camera.position.set(0, 0, 100);
+            camera.up.set(1, 0, 0); // 确保X轴朝上
+            camera.lookAt(0, 0, 0);
+
+            // 添加点云到场景
             scene.add(points);
-            camera.position.set(
-                0,
-                0,
-                100
-            );
             
             // 添加距离圆圈
             const box = new THREE.Box3().setFromObject(points);
